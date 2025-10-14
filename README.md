@@ -1,7 +1,9 @@
 # Selfie Light App
 
 A simple Windows app that creates white (or colored) light bars on the screen 
-to act as a webcam "selfie light". Created so that one can sit in the dark without requiring additional lights for virtual meetings.
+to act as a webcam "selfie light". Created so that one can sit in the dark without requiring additional lights for virtual meetings.|
+
+## Windows .exe can be found in the Releases tab
 
 ![screenshot](https://github.com/matts8008/Windows-Selfie-Light/blob/main/screenshot.png)
 
