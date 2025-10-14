@@ -2,27 +2,23 @@ import tkinter as tk
 import screeninfo
 import math
 
-# Range for realistic color temps
 MIN_TEMP = 2700
 MAX_TEMP = 6500
 
 def kelvin_to_rgb(temp_k):
-    """Convert Kelvin color temperature to approximate RGB."""
     temp = temp_k / 100.0
 
     if temp <= 66:
         r = 255
     else:
-        r = temp - 60
-        r = 329.698727446 * (r ** -0.1332047592)
+        r = 329.698727446 * ((temp - 60) ** -0.1332047592)
         r = max(0, min(255, r))
 
     if temp <= 66:
         g = 99.4708025861 * math.log(temp) - 161.1195681661
         g = max(0, min(255, g))
     else:
-        g = temp - 60
-        g = 288.1221695283 * (g ** -0.0755148492)
+        g = 288.1221695283 * ((temp - 60) ** -0.0755148492)
         g = max(0, min(255, g))
 
     if temp >= 66:
@@ -36,7 +32,6 @@ def kelvin_to_rgb(temp_k):
     return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
 
 def adjust_brightness(hex_color, factor):
-    """Apply brightness factor to hex color."""
     hex_color = hex_color.lstrip("#")
     rgb = [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
     rgb = [max(0, min(255, int(c * factor))) for c in rgb]
@@ -45,19 +40,20 @@ def adjust_brightness(hex_color, factor):
 class LightBar:
     instances = []
 
-    def __init__(self, x, y, w, h, controller):
+    def __init__(self, x, y, w, h, controller, role="generic"):
         self.win = tk.Toplevel()
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
         self.win.geometry(f"{w}x{h}+{x}+{y}")
         self.controller = controller
+        self.role = role
 
-        self.x = self.y = 0
-        self._bind_drag()
+        self.drag_start = None
+        self.resize_edge = None
+        self._bind_mouse()
 
         # Right-click menu
         menu = tk.Menu(self.win, tearoff=0)
-
         menu.add_command(label="Color Temperature", command=self.controller.popup_temp)
         menu.add_command(label="Brightness", command=self.controller.popup_brightness)
 
@@ -74,16 +70,74 @@ class LightBar:
         self.win.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
         LightBar.instances.append(self)
 
-    def _bind_drag(self):
-        def start_move(e):
-            self.x, self.y = e.x, e.y
-        def do_move(e):
-            dx, dy = e.x - self.x, e.y - self.y
-            new_x = self.win.winfo_x() + dx
-            new_y = self.win.winfo_y() + dy
-            self.win.geometry(f"+{new_x}+{new_y}")
-        self.win.bind("<Button-1>", start_move)
-        self.win.bind("<B1-Motion>", do_move)
+    def _bind_mouse(self):
+        margin = 10
+
+        def on_motion(event):
+            x, y, w, h = event.x, event.y, self.win.winfo_width(), self.win.winfo_height()
+            if x < margin:
+                self.win.config(cursor="sb_h_double_arrow")
+            elif x > w - margin:
+                self.win.config(cursor="sb_h_double_arrow")
+            elif y < margin:
+                self.win.config(cursor="sb_v_double_arrow")
+            elif y > h - margin:
+                self.win.config(cursor="sb_v_double_arrow")
+            else:
+                self.win.config(cursor="arrow")
+
+        def on_press(event):
+            self.drag_start = (event.x_root, event.y_root,
+                               self.win.winfo_x(), self.win.winfo_y(),
+                               self.win.winfo_width(), self.win.winfo_height())
+            x, y, w, h = event.x, event.y, self.win.winfo_width(), self.win.winfo_height()
+            if x < margin: self.resize_edge = "left"
+            elif x > w - margin: self.resize_edge = "right"
+            elif y < margin: self.resize_edge = "top"
+            elif y > h - margin: self.resize_edge = "bottom"
+            else: self.resize_edge = "move"
+
+        def on_drag(event):
+            if not self.drag_start: return
+            dx = event.x_root - self.drag_start[0]
+            dy = event.y_root - self.drag_start[1]
+            x0, y0, w0, h0 = self.drag_start[2:]
+
+            if self.resize_edge == "move":
+                self.win.geometry(f"+{x0+dx}+{y0+dy}")
+            elif self.resize_edge == "left":
+                new_w = w0 - dx
+                if new_w > 20:
+                    self.win.geometry(f"{new_w}x{h0}+{x0+dx}+{y0}")
+                    if self.role == "border":
+                        self.controller.resize_border(new_w)
+            elif self.resize_edge == "right":
+                new_w = w0 + dx
+                if new_w > 20:
+                    self.win.geometry(f"{new_w}x{h0}+{x0}+{y0}")
+                    if self.role == "border":
+                        self.controller.resize_border(new_w)
+            elif self.resize_edge == "top":
+                new_h = h0 - dy
+                if new_h > 20:
+                    self.win.geometry(f"{w0}x{new_h}+{x0}+{y0+dy}")
+                    if self.role == "border":
+                        self.controller.resize_border(new_h, vertical=True)
+            elif self.resize_edge == "bottom":
+                new_h = h0 + dy
+                if new_h > 20:
+                    self.win.geometry(f"{w0}x{new_h}+{x0}+{y0}")
+                    if self.role == "border":
+                        self.controller.resize_border(new_h, vertical=True)
+
+        def on_release(event):
+            self.drag_start = None
+            self.resize_edge = None
+
+        self.win.bind("<Motion>", on_motion)
+        self.win.bind("<Button-1>", on_press)
+        self.win.bind("<B1-Motion>", on_drag)
+        self.win.bind("<ButtonRelease-1>", on_release)
 
     def set_color(self, color):
         self.win.configure(bg=color)
@@ -92,8 +146,8 @@ class LightBar:
         self.win.destroy()
 
 class Controller:
-    def __init__(self, screen_w, screen_h, root):
-        self.screen_w, self.screen_h = screen_w, screen_h
+    def __init__(self, screen_w, screen_h, work_h, root):
+        self.screen_w, self.screen_h = screen_w, work_h  # use working height (no taskbar)
         self.brightness = 1.0
         self.color_temp = 4000
         self.bars = []
@@ -106,21 +160,21 @@ class Controller:
         if self.style == "sides":
             bw = int(self.screen_w * 0.15)
             self.bars = [
-                LightBar(0, 0, bw, self.screen_h, self),
-                LightBar(self.screen_w - bw, 0, bw, self.screen_h, self)
+                LightBar(0, 0, bw, self.screen_h, self, role="left"),
+                LightBar(self.screen_w - bw, 0, bw, self.screen_h, self, role="right")
             ]
         elif self.style == "border":
             bw = 100
             self.bars = [
-                LightBar(0, 0, self.screen_w, bw, self),
-                LightBar(0, self.screen_h-bw, self.screen_w, bw, self),
-                LightBar(0, 0, bw, self.screen_h, self),
-                LightBar(self.screen_w-bw, 0, bw, self.screen_h, self)
+                LightBar(0, 0, self.screen_w, bw, self, role="border"),
+                LightBar(0, self.screen_h-bw, self.screen_w, bw, self, role="border"),
+                LightBar(0, 0, bw, self.screen_h, self, role="border"),
+                LightBar(self.screen_w-bw, 0, bw, self.screen_h, self, role="border")
             ]
         elif self.style == "top":
-            self.bars = [LightBar(0, 0, self.screen_w, 150, self)]
+            self.bars = [LightBar(0, 0, self.screen_w, 150, self, role="top")]
         elif self.style == "fullscreen":
-            self.bars = [LightBar(0, 0, self.screen_w, self.screen_h, self)]
+            self.bars = [LightBar(0, 0, self.screen_w, self.screen_h, self, role="fullscreen")]
         self.update_colors()
 
     def set_style(self, style):
@@ -136,8 +190,8 @@ class Controller:
     def popup_temp(self):
         win = tk.Toplevel()
         win.title("Color Temperature")
-        win.attributes("-topmost", True)   # keep above bars
-        win.grab_set()                     # focus this popup
+        win.attributes("-topmost", True)
+        win.grab_set()
         tk.Label(win, text="Temperature (K)").pack()
         slider = tk.Scale(win, from_=MIN_TEMP, to=MAX_TEMP, orient="horizontal",
                           length=300, resolution=100,
@@ -148,8 +202,8 @@ class Controller:
     def popup_brightness(self):
         win = tk.Toplevel()
         win.title("Brightness")
-        win.attributes("-topmost", True)   # keep above bars
-        win.grab_set()                     # focus this popup
+        win.attributes("-topmost", True)
+        win.grab_set()
         tk.Label(win, text="Brightness").pack()
         slider = tk.Scale(win, from_=0.1, to=1.0, orient="horizontal",
                           length=300, resolution=0.05,
@@ -163,6 +217,19 @@ class Controller:
 
     def _update_brightness(self, val):
         self.brightness = val
+        self.update_colors()
+
+    def resize_border(self, thickness, vertical=False):
+        if self.style != "border":
+            return
+        self.close_bars()
+        bw = max(20, thickness)
+        self.bars = [
+            LightBar(0, 0, self.screen_w, bw, self, role="border"),
+            LightBar(0, self.screen_h-bw, self.screen_w, bw, self, role="border"),
+            LightBar(0, 0, bw, self.screen_h, self, role="border"),
+            LightBar(self.screen_w-bw, 0, bw, self.screen_h, self, role="border")
+        ]
         self.update_colors()
 
     def close_bars(self):
@@ -180,6 +247,10 @@ class Controller:
 if __name__ == "__main__":
     screen = screeninfo.get_monitors()[0]
     root = tk.Tk()
-    root.withdraw()  # hide root
-    controller = Controller(screen.width, screen.height, root)
+    root.withdraw()
+
+    # taskbar height = difference between monitor height and tk screen height
+    total_h = screen.height
+    work_h = root.winfo_screenheight()  # excludes taskbar
+    controller = Controller(screen.width, total_h, work_h, root)
     root.mainloop()
