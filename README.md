@@ -10,9 +10,11 @@ to act as a webcam "selfie light".
 - Closes cleanly with **Close All**
 
 ## Install
+Light.exe tested in Windows 10
+
 If you have Python:
 ```bash
 pip install screeninfo
 python selfie_light.pyw
 
-Light.exe tested in Windows 10
+
