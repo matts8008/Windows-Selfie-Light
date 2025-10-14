@@ -3,6 +3,8 @@
 A simple Windows app that creates white (or colored) light bars on the screen 
 to act as a webcam "selfie light".
 
+![screenshot](https://github.com/matts8008/Windows-Selfie-Light/blob/main/screenshot.png)
+
 ## Features
 - Right-click to adjust **color temperature** and **brightness**
 - Multiple **bar styles**: side bars, thin border, top bar, fullscreen
